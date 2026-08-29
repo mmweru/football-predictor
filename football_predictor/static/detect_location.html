@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Detect Match Venue Location</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { font-size: 1.3rem; }
+  button { background: #2563eb; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-size: 1rem; cursor: pointer; }
+  button:disabled { background: #9ca3af; }
+  #result { margin-top: 24px; padding: 16px; background: #f3f4f6; border-radius: 8px; display: none; }
+  #result.visible { display: block; }
+  .coord { font-family: monospace; font-size: 1.1rem; font-weight: bold; }
+  .copy-line { margin-top: 12px; padding: 10px; background: #111827; color: #10b981; border-radius: 6px; font-family: monospace; font-size: 0.85rem; overflow-x: auto; white-space: nowrap; }
+  #error { color: #dc2626; margin-top: 16px; display: none; }
+  #accuracy-note { font-size: 0.85rem; color: #6b7280; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Detect Current Field Location</h1>
+<p>Stand at (or near) the match venue, then tap the button below. This uses your device's own GPS/location hardware via the browser — nothing is sent anywhere, the coordinates only appear on this page for you to copy.</p>
+
+<button id="detect-btn" onclick="detectLocation()">Detect My Location</button>
+
+<div id="result">
+  <p>Latitude: <span class="coord" id="lat"></span></p>
+  <p>Longitude: <span class="coord" id="lon"></span></p>
+  <p id="accuracy-note"></p>
+  <p>Copy this into the CLI command:</p>
+  <div class="copy-line" id="copy-line"></div>
+</div>
+
+<div id="error"></div>
+
+<script>
+function detectLocation() {
+  const btn = document.getElementById('detect-btn');
+  const errorDiv = document.getElementById('error');
+  const resultDiv = document.getElementById('result');
+  errorDiv.style.display = 'none';
+  resultDiv.classList.remove('visible');
+
+  if (!navigator.geolocation) {
+    errorDiv.textContent = 'Geolocation is not supported by this browser.';
+    errorDiv.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Detecting...';
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      const accuracy = position.coords.accuracy; // meters
+
+      document.getElementById('lat').textContent = lat.toFixed(6);
+      document.getElementById('lon').textContent = lon.toFixed(6);
+      document.getElementById('accuracy-note').textContent =
+        'Accuracy: ~' + Math.round(accuracy) + ' meters (lower is better; move to open sky and retry if this is large)';
+      document.getElementById('copy-line').textContent =
+        'python -m app.set_match_venue --match-id <ID> --lat ' + lat.toFixed(6) + ' --lon ' + lon.toFixed(6);
+
+      resultDiv.classList.add('visible');
+      btn.disabled = false;
+      btn.textContent = 'Detect Again';
+    },
+    (err) => {
+      let message = 'Could not detect location: ' + err.message;
+      if (err.code === err.PERMISSION_DENIED) {
+        message = 'Location permission was denied. Enable location access for this page/browser and try again.';
+      }
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Detect My Location';
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+</script>
+
+</body>
+</html>
