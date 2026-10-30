@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     # SQLite) without touching the Postgres settings.
     database_url: Optional[str] = None
 
+    # --- external data sources (all optional; football-data.co.uk, FPL and Open-Meteo need no key) ---
+    football_data_org_token: Optional[str] = None   # free token: https://www.football-data.org/client/register
+    bigballs_api_key: Optional[str] = None          # free key: https://bigballsdata.com/signup
+    football_api_key: Optional[str] = None           # API-Football key: https://www.api-football.com/
+    market_weight: float = 0.8                      # weight on bookmaker odds when blending (see app/modeling.py)
+
     echo_sql: bool = False  # set True to log every SQL statement (useful for debugging)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

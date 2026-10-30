@@ -66,7 +66,9 @@ def geocode_all_teams(only_team: Optional[str] = None) -> None:
     build_geocoder()  # preflight: fails fast with a clear error if USER_AGENT wasn't customized
 
     try:
-        query = db.query(Team).filter(Team.stadium_lat.is_(None))
+        # Only clubs that are visible in the app (active, one of the 4 supported leagues): don't waste Nominatim's 1 req/sec
+        # on relegated clubs or the Kenyan teams.
+        query = db.query(Team).filter(Team.stadium_lat.is_(None), Team.is_active.is_(True))
         if only_team:
             query = query.filter(Team.name == only_team)
         teams = query.all()
@@ -89,7 +91,7 @@ def geocode_all_teams(only_team: Optional[str] = None) -> None:
 
             # Exact geocoding failed — try a league-level fallback location
             # instead of leaving this team permanently without coordinates.
-            fallback = LEAGUE_FALLBACK_LOCATIONS.get(team.league)
+            fallback = LEAGUE_FALLBACK_LOCATIONS.get(team.league or "")
             if fallback is not None:
                 lat, lon = fallback
                 team.stadium_lat, team.stadium_lon = lat, lon
