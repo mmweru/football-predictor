@@ -31,6 +31,8 @@ from app.modeling import (
 )
 
 BUNDLE_PATH = "model_bundle.joblib"
+MIN_PRODUCTION_MATCHES = 1500
+MIN_PRODUCTION_SEASONS = 3
 
 
 def _print_table(title: str, table: Dict[str, Dict[str, float]]) -> None:
@@ -68,7 +70,7 @@ def ablate(train: pd.DataFrame, val: pd.DataFrame, test: pd.DataFrame, groups: L
 def train(
     db: Session, model_out: str = BUNDLE_PATH, groups: Optional[List[str]] = None, market_weight: float = 0.8,
     walk_forward_seasons: int = 0, run_ablation: bool = False, half_life_days: float = 0.0, extra_games=None,
-    injury_lookup=None,
+    injury_lookup=None, allow_small_data: bool = False,
 ) -> Optional[dict]:
     groups = list(groups or DEFAULT_GROUPS)
     frame = build_feature_frame(db, extra_games=extra_games, injury_lookup=injury_lookup)
@@ -76,10 +78,16 @@ def train(
         print("No matches in the database for the 4 supported leagues. Run: python -m app.sync_data")
         return None
     P = frame[frame["played"]].copy().sort_values(["date", "match_id"]).reset_index(drop=True)
+    seasons = sorted(P["season"].dropna().unique())
     print(f"Played matches: {len(P)}  |  leagues: {dict(P['league'].value_counts())}")
-    print(f"Seasons: {sorted(P['season'].unique())}")
-    if len(P) < 400:
-        print("WARNING: <400 matches. Fine for a smoke test, but sync more seasons (python -m app.sync_data --seasons 8) before trusting this.")
+    print(f"Seasons: {seasons}")
+    if not allow_small_data and (len(P) < MIN_PRODUCTION_MATCHES or len(seasons) < MIN_PRODUCTION_SEASONS):
+        print(
+            f"Not saving a production model: need at least {MIN_PRODUCTION_MATCHES} played matches across "
+            f"{MIN_PRODUCTION_SEASONS} seasons; found {len(P)} matches across {len(seasons)} season(s). "
+            "Sync more history first. Use --allow-small-data only for a deliberate test model."
+        )
+        return None
 
     train_df, val_df, test_df = chronological_split(P)
     print(f"Split  train={len(train_df)} ({train_df['date'].min()}..{train_df['date'].max()})  "
@@ -130,6 +138,7 @@ def main() -> None:
     ap.add_argument("--walk-forward", type=int, default=0, metavar="N", help="also evaluate on each of the last N whole seasons")
     ap.add_argument("--ablate", action="store_true", help="show which feature groups help")
     ap.add_argument("--half-life-days", type=float, default=0.0, help="down-weight older matches (0 = off)")
+    ap.add_argument("--allow-small-data", action="store_true", help="allow saving a model below the production history threshold (testing only)")
     args = ap.parse_args()
 
     groups = args.groups.split(",") if args.groups else list(DEFAULT_GROUPS)
@@ -145,7 +154,7 @@ def main() -> None:
     db = SessionLocal()
     try:
         train(db, args.model_out, groups, args.market_weight, args.walk_forward, args.ablate, args.half_life_days,
-              injury_lookup=injury_lookup)
+              injury_lookup=injury_lookup, allow_small_data=args.allow_small_data)
     finally:
         db.close()
 

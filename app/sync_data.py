@@ -4,7 +4,7 @@ One command to bring the whole database up to date.
     python -m app.migrate                       # once, after upgrading
     python -m app.sync_data --seasons 8         # first run: 8 seasons x 4 leagues, fixtures, membership, Elo
     python -m app.sync_data                     # later runs: current season + fixtures (fast)
-    python -m app.sync_data --all               # + football-data.org schedule, FPL injuries/players, weather
+    python -m app.sync_data --all               # 8 seasons + configured sources on first full sync
     python -m app.sync_data --local-csv "E0*.csv" --local-div E0     # load CSVs you downloaded by hand
 
 Every step is independent: if one source is down the others still run.
@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import glob
+import importlib
 from typing import List, Optional
 
 import pandas as pd
@@ -34,6 +35,12 @@ def _step(name: str, fn):
         print(f"  [{name}] FAILED, continuing: {e}")
     except Exception as e:  # noqa: BLE001 - one broken source must never abort the whole sync
         print(f"  [{name}] unexpected error ({type(e).__name__}), continuing: {e}")
+
+
+def _history_seasons(requested: Optional[int], all_sources: bool) -> int:
+    if requested is not None:
+        return requested
+    return 8 if all_sources else 1
 
 
 def sync(seasons: int = 1, use_fdorg: bool = False, use_fpl: bool = False, use_weather: bool = False,
@@ -86,8 +93,10 @@ def sync(seasons: int = 1, use_fdorg: bool = False, use_fpl: bool = False, use_w
             print("team-name repairs:", merged)
         rep = refresh_membership(db, active, official_rosters=official_rosters)
         print(f"\nActive clubs for {active}/{(active + 1) % 100:02d}: {rep['per_league']}")
-        for w in rep["warnings"]:
-            print("  WARNING:", w)
+        warnings = rep.get("warnings")
+        if isinstance(warnings, list):
+            for warning in warnings:
+                print("  WARNING:", warning)
         dups = possible_duplicate_teams(db)
         if dups:
             print("  Possible duplicate team names (add to app/team_aliases.py):")
@@ -100,20 +109,20 @@ def sync(seasons: int = 1, use_fdorg: bool = False, use_fpl: bool = False, use_w
 
         # Older deployments used a separate EloHistory builder; the current feature engine derives Elo from matches.
         try:
-            from app.elo import build_elo_history
+            elo_module = importlib.import_module("app.elo")
         except ModuleNotFoundError as error:
             if error.name != "app.elo":
                 raise
             print("[skip] legacy Elo history: app.elo is not installed; live predictions compute Elo from match history")
         else:
-            build_elo_history(db, k=20.0, home_advantage=70.0)
+            elo_module.build_elo_history(db, k=20.0, home_advantage=70.0)
     finally:
         db.close()
 
 
 def _sync_fdorg(db, active: int) -> dict:
     from app.data_sources.footballdata_org import FootballDataOrg
-    fd = FootballDataOrg(settings.football_data_org_token)
+    fd = FootballDataOrg(settings.football_data_org_token or "")
     resolver = TeamResolver(db)
     rosters = {}
     for lg in fd.free_leagues():
@@ -130,7 +139,7 @@ def _sync_fdorg(db, active: int) -> dict:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Sync results, fixtures, odds, injuries and weather for EPL + EFL.")
-    ap.add_argument("--seasons", type=int, default=1, help="how many seasons of history to (re)download, ending with the current one")
+    ap.add_argument("--seasons", type=int, default=None, help="how many seasons of history to sync (default: 8 with --all, otherwise 1)")
     ap.add_argument("--fdorg", action="store_true", help="football-data.org full schedule (PL + Championship; needs token)")
     ap.add_argument("--fpl", action="store_true", help="FPL injuries + player stats (EPL)")
     ap.add_argument("--weather", action="store_true", help="Open-Meteo weather (needs stadium coordinates)")
@@ -141,7 +150,7 @@ def main() -> None:
     ap.add_argument("--local-csv", default=None, help='glob of football-data.co.uk CSV files you already have, e.g. "E0*.csv"')
     ap.add_argument("--local-div", default="E0", choices=list(BY_DIV))
     a = ap.parse_args()
-    sync(a.seasons, use_fdorg=a.fdorg or (a.all and bool(settings.football_data_org_token)), use_fpl=a.fpl or a.all,
+    sync(_history_seasons(a.seasons, a.all), use_fdorg=a.fdorg or (a.all and bool(settings.football_data_org_token)), use_fpl=a.fpl or a.all,
             use_weather=a.weather or a.all, use_bigballs=a.bigballs or a.all, local_csv=a.local_csv, local_div=a.local_div,
             use_api_football=a.api_football, api_football_seasons=a.api_football_seasons)
 

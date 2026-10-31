@@ -99,7 +99,7 @@ _RAW_ALIASES: Dict[str, str] = {
     "mansfield town": "Mansfield", "mansfield": "Mansfield", "shrewsbury town": "Shrewsbury",
     "shrewsbury": "Shrewsbury", "crawley town": "Crawley Town", "port vale": "Port Vale",
     # ---- League Two ----
-    "accrington stanley": "Accrington", "accrington": "Accrington",
+    "accrington stanley": "Accrington", "accrington st": "Accrington", "accrington": "Accrington",
     "barrow": "Barrow", "bromley": "Bromley", "carlisle united": "Carlisle", "carlisle": "Carlisle",
     "cheltenham town": "Cheltenham", "cheltenham": "Cheltenham", "chesterfield": "Chesterfield",
     "colchester united": "Colchester", "colchester": "Colchester", "crewe alexandra": "Crewe", "crewe": "Crewe",

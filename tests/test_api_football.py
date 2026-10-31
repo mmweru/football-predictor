@@ -135,3 +135,4 @@ def test_sync_skips_an_unavailable_season_after_first_plan_error():
 def test_suffix_normalization_keeps_one_name_for_epl_fc_variants():
     assert normalize_team_name("Crystal Palace FC") == "Crystal Palace"
     assert normalize_team_name("Aston Villa F.C.") == "Aston Villa"
+    assert normalize_team_name("Accrington ST") == "Accrington"

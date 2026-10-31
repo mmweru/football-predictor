@@ -9,7 +9,8 @@ from geopy.extra.rate_limiter import RateLimiter
 from geopy.geocoders import Nominatim, Photon
 
 USER_AGENT = "football-predictor-app (mwerumaryann@gmail.com)"
-GEOCODE_TIMEOUT_SECONDS = 10
+GEOCODE_TIMEOUT_SECONDS: float = 10.0
+UK_COORDINATE_BOUNDS = (49.5, 61.0, -8.7, 2.2)
 LEAGUE_FALLBACK_LOCATIONS = {
     "KPL": (-1.286389, 36.817223),
 }
@@ -18,12 +19,18 @@ _geocode_fn = None
 _fallback_geocode_fn = None
 
 
+def is_uk_coordinate(latitude: float, longitude: float) -> bool:
+    min_lat, max_lat, min_lon, max_lon = UK_COORDINATE_BOUNDS
+    return min_lat <= latitude <= max_lat and min_lon <= longitude <= max_lon
+
+
 def _get_geocode_fn():
     global _geocode_fn
     if _geocode_fn is None:
         if USER_AGENT.startswith("REPLACE_ME") or "example.com" in USER_AGENT:
             raise ValueError("Set a descriptive USER_AGENT in app/venue.py before using Nominatim.")
-        geolocator = Nominatim(user_agent=USER_AGENT, timeout=GEOCODE_TIMEOUT_SECONDS)
+        geolocator = Nominatim(user_agent=USER_AGENT)
+        setattr(geolocator, "timeout", GEOCODE_TIMEOUT_SECONDS)
         _geocode_fn = RateLimiter(geolocator.geocode, min_delay_seconds=1, max_retries=2, error_wait_seconds=2)
     return _geocode_fn
 
@@ -31,18 +38,23 @@ def _get_geocode_fn():
 def _get_fallback_geocode_fn():
     global _fallback_geocode_fn
     if _fallback_geocode_fn is None:
-        geolocator = Photon(user_agent=USER_AGENT, timeout=GEOCODE_TIMEOUT_SECONDS)
+        geolocator = Photon(user_agent=USER_AGENT)
+        setattr(geolocator, "timeout", GEOCODE_TIMEOUT_SECONDS)
         _fallback_geocode_fn = RateLimiter(geolocator.geocode, min_delay_seconds=1, max_retries=1)
     return _fallback_geocode_fn
 
 
-def geocode_address(address: str, geocode_fn=None, use_fallback: bool = True) -> Optional[Tuple[float, float]]:
+def geocode_address(address: str, geocode_fn=None, use_fallback: bool = True,
+                    country_codes: Optional[str] = None) -> Optional[Tuple[float, float]]:
     if geocode_fn is not None:
         location = geocode_fn(address)
         return (location.latitude, location.longitude) if location else None
 
     try:
-        location = _get_geocode_fn()(address)
+        if country_codes:
+            location = _get_geocode_fn()(address, country_codes=country_codes)
+        else:
+            location = _get_geocode_fn()(address)
         if location is not None:
             return (location.latitude, location.longitude)
     except Exception as error:

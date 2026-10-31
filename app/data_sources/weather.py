@@ -48,23 +48,27 @@ def fill_weather(db: Session, session: Optional[requests.Session] = None, today:
         lat, lon = (m.venue_lat, m.venue_lon) if m.venue_lat is not None else (home.stadium_lat if home else None, home.stadium_lon if home else None)
         if lat is None or lon is None or not (home and home.is_active):
             continue
-        todo[(round(lat, 3), round(lon, 3))].append(m)
+        todo[(round(lat, 3), round(lon, 3))].append((m.id, m.date))
     n = 0
     for (lat, lon), matches in todo.items():
-        past = [m for m in matches if m.date < today - dt.timedelta(days=1)]
-        future = [m for m in matches if m.date >= today - dt.timedelta(days=1)]
+        past = [(match_id, match_date) for match_id, match_date in matches if match_date < today - dt.timedelta(days=1)]
+        future = [(match_id, match_date) for match_id, match_date in matches if match_date >= today - dt.timedelta(days=1)]
         for group in (past, future):
             if not group:
                 continue
             try:
-                data = fetch_daily(lat, lon, min(m.date for m in group), max(m.date for m in group), session, today)
+                data = fetch_daily(lat, lon, min(match_date for _, match_date in group),
+                                   max(match_date for _, match_date in group), session, today)
             except http.DataSourceError as e:
                 print(f"  [weather skip] {lat},{lon}: {e}")
                 continue
-            for m in group:
-                t, p, w = data.get(m.date, (None, None, None))
+            updates = []
+            for match_id, match_date in group:
+                t, p, w = data.get(match_date, (None, None, None))
                 if t is not None:
-                    m.temp_c, m.precip_mm, m.wind_kph = t, p, w
-                    n += 1
-        db.commit()
+                    updates.append({"id": match_id, "temp_c": t, "precip_mm": p, "wind_kph": w})
+            if updates:
+                db.bulk_update_mappings(Match, updates)
+                db.commit()
+                n += len(updates)
     return n

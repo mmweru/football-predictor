@@ -26,9 +26,15 @@ from __future__ import annotations
 import argparse
 from typing import Optional
 
+from sqlalchemy import or_
+
 from app.database import SessionLocal
 from app.models import Team
-from app.venue import LEAGUE_FALLBACK_LOCATIONS, geocode_address
+from app.venue import LEAGUE_FALLBACK_LOCATIONS, UK_COORDINATE_BOUNDS, geocode_address, is_uk_coordinate
+
+STADIUM_QUERY_OVERRIDES = {
+    "Stoke": "bet365 Stadium, Stoke-on-Trent, United Kingdom",
+}
 
 
 def build_geocoder():
@@ -58,7 +64,11 @@ def geocode_stadium(geocode_fn, team_name: str) -> Optional[tuple]:
     Nominatim -> Photon fallback behavior. Tests pass an explicit mock here
     to isolate the primary path only.
     """
-    return geocode_address(f"{team_name} stadium", geocode_fn=geocode_fn)
+    query = STADIUM_QUERY_OVERRIDES.get(team_name, f"{team_name} stadium, United Kingdom")
+    result = geocode_address(query, geocode_fn=geocode_fn, country_codes="gb")
+    if result is not None and not is_uk_coordinate(*result):
+        return None
+    return result
 
 
 def geocode_all_teams(only_team: Optional[str] = None) -> None:
@@ -68,9 +78,16 @@ def geocode_all_teams(only_team: Optional[str] = None) -> None:
     try:
         # Only clubs that are visible in the app (active, one of the 4 supported leagues): don't waste Nominatim's 1 req/sec
         # on relegated clubs or the Kenyan teams.
-        query = db.query(Team).filter(Team.stadium_lat.is_(None), Team.is_active.is_(True))
+        min_lat, max_lat, min_lon, max_lon = UK_COORDINATE_BOUNDS
+        invalid_coordinates = or_(
+            Team.stadium_lat.is_(None), Team.stadium_lon.is_(None),
+            Team.stadium_lat < min_lat, Team.stadium_lat > max_lat,
+            Team.stadium_lon < min_lon, Team.stadium_lon > max_lon,
+        )
         if only_team:
-            query = query.filter(Team.name == only_team)
+            query = db.query(Team).filter(Team.is_active.is_(True), Team.name == only_team)
+        else:
+            query = db.query(Team).filter(Team.is_active.is_(True), invalid_coordinates)
         teams = query.all()
 
         if not teams:
