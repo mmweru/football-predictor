@@ -9,6 +9,7 @@ module imports `settings` from here instead of reading os.environ directly.
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -37,7 +38,10 @@ class Settings(BaseSettings):
     @property
     def sqlalchemy_database_url(self) -> str:
         if self.database_url:
-            return self.database_url
+            url = make_url(self.database_url)
+            if url.drivername in {"postgres", "postgresql", "postgresql+psycopg"}:
+                url = url.set(drivername="postgresql+psycopg2")
+            return url.render_as_string(hide_password=False)
         return (
             f"postgresql+psycopg2://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
